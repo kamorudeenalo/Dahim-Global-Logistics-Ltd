@@ -1,12 +1,12 @@
 # Dahim Dashboard — SPA routing for Apache (cPanel shared hosting).
-# Lives at /dashboard/ on the main WordPress domain (not a separate
-# subdomain). Without this, refreshing any page other than the homepage
-# (e.g. yoursite.com/dashboard/inquiries) would 404, since those paths
-# only exist client-side, not as real files.
+# Lives at the root of the dashboard subdomain:
+# https://dashboard-staging.technophilesdigital.com/
+# Without this, refreshing any page other than the homepage (for example
+# /posts or /settings) would 404 because those paths only exist client-side.
 
 <IfModule mod_rewrite.c>
   RewriteEngine On
-  RewriteBase /dashboard/
+  RewriteBase /
 
   # Let real files and folders (assets, icons, manifest, service worker) through as-is
   RewriteCond %{REQUEST_FILENAME} -f [OR]
@@ -33,7 +33,7 @@
     # after a new one is deployed here.
     Header set X-LiteSpeed-Cache-Control "no-cache"
   </FilesMatch>
-  <FilesMatch "\.(js|css|png|svg)$">
+  <FilesMatch "\.(js|css|png|svg|webp)$">
     Header set Cache-Control "public, max-age=31536000, immutable"
   </FilesMatch>
 </IfModule>
