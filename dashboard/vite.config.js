@@ -3,7 +3,9 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
-  base: '/dashboard/',
+  // The dashboard is deployed at the root of its own subdomain:
+  // https://dashboard-staging.technophilesdigital.com/
+  base: '/',
   plugins: [
     react(),
     VitePWA({
@@ -16,12 +18,12 @@ export default defineConfig({
         theme_color: '#1E2A44',
         background_color: '#FFFFFF',
         display: 'standalone',
-        start_url: '/dashboard/',
-        scope: '/dashboard/',
+        start_url: '/',
+        scope: '/',
         icons: [
-          { src: '/dashboard/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
-          { src: '/dashboard/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-          { src: '/dashboard/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
+          { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
         ]
       },
       workbox: {
