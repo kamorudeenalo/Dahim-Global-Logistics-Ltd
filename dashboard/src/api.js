@@ -1,22 +1,10 @@
 /**
  * Dahim Dashboard — WordPress REST API client.
  *
- * Auth model: standard WordPress cookie + nonce — the exact same mechanism
- * wp-admin's own JavaScript uses, not a custom scheme. An earlier version
- * of this used a hand-built token system to work around this host
- * (LiteSpeed) stripping the Authorization HTTP header. That fixed its one
- * job, but caused a bigger problem: since it deliberately never set a
- * WordPress login cookie, no caching layer on the host had any way to
- * recognize these requests as personalized, and could cache and replay
- * one person's authenticated response to everyone else. Cookie + nonce
- * auth avoids that entirely — it's the exact signal caching plugins
- * already know to check for, and it never touches the Authorization
- * header at all, so the original stripping issue doesn't apply either.
- *
- * Nothing is stored in localStorage for this — the browser's cookie jar
- * IS the session. The nonce (needed on every request as proof the request
- * really came from this app, not just anyone with the cookie) lives only
- * in memory and gets refreshed via restoreSession() on every fresh app load.
+ * Auth model: standard WordPress cookie + nonce. The dashboard is hosted on
+ * a separate subdomain, so requests are explicitly sent to the WordPress
+ * site's origin with credentials included. The browser's WordPress cookie
+ * remains the session; the REST nonce lives only in memory.
  */
 
 let currentNonce = null;
@@ -29,10 +17,15 @@ class ApiError extends Error {
   }
 }
 
-// The dashboard lives on the same domain as the WordPress site (a
-// subfolder, not a subdomain), so it's always talking to its own origin.
+// WordPress owns the API. Keep the URL configurable for production while
+// providing the staging URL as the safe default for the current deployment.
+const WORDPRESS_ORIGIN = (
+  import.meta.env.VITE_WP_API_URL ||
+  'https://staging.technophilesdigital.com'
+).replace(/\/$/, '');
+
 function siteBaseUrl() {
-  return window.location.origin;
+  return WORDPRESS_ORIGIN;
 }
 
 /**
@@ -46,22 +39,47 @@ async function requestDetailed(path, { method = 'GET', body, skipAuth = false } 
   if (!skipAuth) headers['X-WP-Nonce'] = currentNonce;
   let res;
   try {
-    res = await fetch(url, { method, headers, credentials: 'same-origin', body: body !== undefined ? JSON.stringify(body) : undefined });
-  } catch { throw new ApiError('Could not reach the site. Check your connection.', 0); }
+    res = await fetch(url, {
+      method,
+      headers,
+      // The dashboard and WordPress are different origins but the same site.
+      // `include` is required for the browser to send/receive the WordPress
+      // authentication cookie across the dashboard subdomain boundary.
+      credentials: 'include',
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    throw new ApiError('Could not reach the site. Check your connection.', 0);
+  }
   if (!skipAuth && res.status === 401) {
-    currentNonce = null; currentUser = null; window.dispatchEvent(new Event('dahim:unauthorized'));
+    currentNonce = null;
+    currentUser = null;
+    window.dispatchEvent(new Event('dahim:unauthorized'));
     throw new ApiError('Your session has expired. Please sign in again.', 401);
   }
-  if (!skipAuth && res.status === 403) throw new ApiError("You don't have permission to do this. This may need an Administrator account.", 403);
+  if (!skipAuth && res.status === 403) {
+    throw new ApiError("You don't have permission to do this. This may need an Administrator account.", 403);
+  }
   const rawText = await res.text();
-  let data = null; let parseFailed = false;
-  try { data = rawText ? JSON.parse(rawText) : null; } catch { parseFailed = true; }
-  if (!res.ok) throw new ApiError((data && data.message) || `Request failed (${res.status}).`, res.status);
+  let data = null;
+  let parseFailed = false;
+  try {
+    data = rawText ? JSON.parse(rawText) : null;
+  } catch {
+    parseFailed = true;
+  }
+  if (!res.ok) {
+    throw new ApiError((data && data.message) || `Request failed (${res.status}).`, res.status);
+  }
   if (parseFailed) {
     console.error('Dashboard: non-JSON response from', url, '\n', rawText.slice(0, 500));
     throw new ApiError('The site returned an unexpected response. Check the browser console or PHP error log.', res.status);
   }
-  return { data, total: Number(res.headers.get('X-WP-Total') || 0), totalPages: Number(res.headers.get('X-WP-TotalPages') || 0) };
+  return {
+    data,
+    total: Number(res.headers.get('X-WP-Total') || 0),
+    totalPages: Number(res.headers.get('X-WP-TotalPages') || 0),
+  };
 }
 
 async function request(path, options = {}) {
@@ -70,22 +88,17 @@ async function request(path, options = {}) {
 }
 
 // Signs in with a real WordPress username/password — sets the actual
-// WordPress login cookie (via wp_signon() server-side), and returns a
-// fresh REST nonce to use on every request afterward.
+// WordPress login cookie (via wp_signon() server-side), and then obtains a
+// fresh REST nonce using a genuinely separate request.
 export async function login(username, password) {
   await request('dahim/v1/auth/login', {
     method: 'POST',
     body: { username, password },
     skipAuth: true,
   });
-  // Deliberately NOT using the nonce this response includes: a nonce
-  // created in the very same request as wp_signon() is salted against an
-  // empty/wrong session identifier, because PHP's own copy of the cookie
-  // data doesn't update until the browser's *next* request — not this
-  // one, even though the Set-Cookie header just went out. That nonce can
-  // never validate against anything afterward. Following up with a
-  // genuinely separate request (which the browser now correctly attaches
-  // the real cookie to) gets a nonce that's actually usable.
+
+  // Do not use the nonce returned by the login response. A separate request
+  // is required so PHP sees the newly established authentication cookie.
   const result = await request('dahim/v1/auth/me', { skipAuth: true });
   currentNonce = result.nonce;
   currentUser = result.user;
@@ -163,7 +176,11 @@ export async function listItemsPaged(restBase, params = {}) {
   });
   const result = await requestDetailed(`wp/v2/${restBase}?${qs.toString()}`);
   if (!Array.isArray(result.data)) throw new ApiError(`Expected a list of ${restBase}.`, 0);
-  return { items: result.data, total: result.total || result.data.length, totalPages: result.totalPages || 1 };
+  return {
+    items: result.data,
+    total: result.total || result.data.length,
+    totalPages: result.totalPages || 1,
+  };
 }
 
 export async function getSiteSettings() {
@@ -186,7 +203,6 @@ export function deleteItem(restBase, id) {
   return request(`wp/v2/${restBase}/${id}?force=true`, { method: 'DELETE' });
 }
 
-
 // Upload an image to the WordPress Media Library. The REST media endpoint
 // expects multipart/form-data, so this intentionally does not use the JSON
 // request helper above (and must not set Content-Type manually).
@@ -203,7 +219,7 @@ export async function uploadMedia(file, { title = '', alt_text = '' } = {}) {
     res = await fetch(url, {
       method: 'POST',
       headers: { 'X-WP-Nonce': currentNonce },
-      credentials: 'same-origin',
+      credentials: 'include',
       body: form,
     });
   } catch {
@@ -222,7 +238,9 @@ export async function uploadMedia(file, { title = '', alt_text = '' } = {}) {
 
   const rawText = await res.text();
   let data = null;
-  try { data = rawText ? JSON.parse(rawText) : null; } catch {}
+  try {
+    data = rawText ? JSON.parse(rawText) : null;
+  } catch {}
   if (!res.ok) {
     throw new ApiError((data && data.message) || `Image upload failed (${res.status}).`, res.status);
   }
