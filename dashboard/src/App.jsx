@@ -33,7 +33,8 @@ export default function App() {
   return (
     <AuthProvider>
       <ToastProvider>
-        <BrowserRouter basename="/dashboard">
+        {/* Dashboard is served from the root of its own subdomain. */}
+        <BrowserRouter>
           <Routes>
             <Route path="/login" element={<RedirectIfAuthed><Login /></RedirectIfAuthed>} />
             <Route path="/register" element={<RedirectIfAuthed><Register /></RedirectIfAuthed>} />
