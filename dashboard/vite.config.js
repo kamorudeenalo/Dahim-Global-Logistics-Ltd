@@ -3,9 +3,8 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
-  // The dashboard is deployed at the root of its own subdomain:
-  // https://dashboard-staging.technophilesdigital.com/
-  base: '/',
+  // The dashboard is deployed inside the WordPress site at /dashboard/.
+  base: '/dashboard/',
   plugins: [
     react(),
     VitePWA({
@@ -18,16 +17,15 @@ export default defineConfig({
         theme_color: '#1E2A44',
         background_color: '#FFFFFF',
         display: 'standalone',
-        start_url: '/',
-        scope: '/',
+        start_url: '/dashboard/',
+        scope: '/dashboard/',
         icons: [
-          { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
-          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
+          { src: '/dashboard/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: '/dashboard/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: '/dashboard/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
         ]
       },
       workbox: {
-        // Never cache API calls — the dashboard must always show live data.
         runtimeCaching: [
           {
             urlPattern: ({ url }) => url.pathname.includes('/wp-json/'),
