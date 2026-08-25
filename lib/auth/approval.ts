@@ -1,11 +1,14 @@
 ﻿import "server-only";
 
 import { prisma } from "@/lib/db";
+import { requirePermission } from "@/lib/auth/authorization";
 
 export async function approveAccount(
   userId: string,
   approvedById: string
 ) {
+  await requirePermission(approvedById, "account.approve");
+
   const user = await prisma.user.findUnique({
     where: {
       id: userId,
@@ -73,6 +76,8 @@ export async function rejectAccount(
   approvedById: string,
   reason?: string
 ) {
+  await requirePermission(approvedById, "account.reject");
+
   const user = await prisma.user.findUnique({
     where: {
       id: userId,
