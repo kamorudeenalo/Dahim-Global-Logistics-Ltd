@@ -9,8 +9,34 @@ import {
 import { hashPassword } from "@/lib/auth/password";
 import { revokeAllUserSessions } from "@/lib/auth/session";
 import { writeAuditLog } from "@/lib/auth/audit";
+import { checkRateLimit } from "@/lib/security/rate-limit";
 
-export async function createPasswordResetToken(userId: string) {
+const PASSWORD_RESET_LIMIT = 3;
+const PASSWORD_RESET_WINDOW_MS = 15 * 60 * 1000;
+
+export async function createPasswordResetToken(
+  userId: string
+) {
+  const rateLimit = await checkRateLimit(
+    `password-reset:${userId}`,
+    PASSWORD_RESET_LIMIT,
+    PASSWORD_RESET_WINDOW_MS
+  );
+
+  if (!rateLimit.allowed) {
+    await writeAuditLog(
+      "PASSWORD_RESET_REQUESTED",
+      {
+        userId,
+        metadata: {
+          reason: "RATE_LIMITED",
+        },
+      }
+    );
+
+    return null;
+  }
+
   const token = generateSecureToken();
   const tokenHash = hashSecureToken(token);
   const expiresAt = getPasswordResetExpiry();
@@ -30,9 +56,12 @@ export async function createPasswordResetToken(userId: string) {
     },
   });
 
-  await writeAuditLog("PASSWORD_RESET_REQUESTED", {
-    userId,
-  });
+  await writeAuditLog(
+    "PASSWORD_RESET_REQUESTED",
+    {
+      userId,
+    }
+  );
 
   return {
     token,
@@ -50,19 +79,30 @@ export async function resetPassword(
 
   const tokenHash = hashSecureToken(token);
 
-  const record = await prisma.passwordResetToken.findUnique({
-    where: { tokenHash },
-  });
+  const record =
+    await prisma.passwordResetToken.findUnique({
+      where: {
+        tokenHash,
+      },
+    });
 
-  if (!record || record.usedAt || record.expiresAt <= new Date()) {
+  if (
+    !record ||
+    record.usedAt ||
+    record.expiresAt <= new Date()
+  ) {
     return null;
   }
 
   const passwordHash = await hashPassword(newPassword);
 
   const user = await prisma.user.update({
-    where: { id: record.userId },
-    data: { passwordHash },
+    where: {
+      id: record.userId,
+    },
+    data: {
+      passwordHash,
+    },
     select: {
       id: true,
       email: true,
@@ -73,15 +113,22 @@ export async function resetPassword(
   });
 
   await prisma.passwordResetToken.update({
-    where: { id: record.id },
-    data: { usedAt: new Date() },
+    where: {
+      id: record.id,
+    },
+    data: {
+      usedAt: new Date(),
+    },
   });
 
   await revokeAllUserSessions(user.id);
 
-  await writeAuditLog("PASSWORD_RESET_COMPLETED", {
-    userId: user.id,
-  });
+  await writeAuditLog(
+    "PASSWORD_RESET_COMPLETED",
+    {
+      userId: user.id,
+    }
+  );
 
   return user;
 }

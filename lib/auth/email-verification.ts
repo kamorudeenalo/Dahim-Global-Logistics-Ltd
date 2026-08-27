@@ -7,8 +7,34 @@ import {
   getEmailVerificationExpiry,
 } from "@/lib/auth/tokens";
 import { writeAuditLog } from "@/lib/auth/audit";
+import { checkRateLimit } from "@/lib/security/rate-limit";
 
-export async function createEmailVerificationToken(userId: string) {
+const EMAIL_VERIFICATION_LIMIT = 3;
+const EMAIL_VERIFICATION_WINDOW_MS = 15 * 60 * 1000;
+
+export async function createEmailVerificationToken(
+  userId: string
+) {
+  const rateLimit = await checkRateLimit(
+    `email-verification:${userId}`,
+    EMAIL_VERIFICATION_LIMIT,
+    EMAIL_VERIFICATION_WINDOW_MS
+  );
+
+  if (!rateLimit.allowed) {
+    await writeAuditLog(
+      "EMAIL_VERIFICATION_REQUESTED",
+      {
+        userId,
+        metadata: {
+          reason: "RATE_LIMITED",
+        },
+      }
+    );
+
+    return null;
+  }
+
   const token = generateSecureToken();
   const tokenHash = hashSecureToken(token);
   const expiresAt = getEmailVerificationExpiry();
@@ -20,17 +46,21 @@ export async function createEmailVerificationToken(userId: string) {
     },
   });
 
-  const record = await prisma.emailVerificationToken.create({
-    data: {
-      userId,
-      tokenHash,
-      expiresAt,
-    },
-  });
+  const record =
+    await prisma.emailVerificationToken.create({
+      data: {
+        userId,
+        tokenHash,
+        expiresAt,
+      },
+    });
 
-  await writeAuditLog("EMAIL_VERIFICATION_REQUESTED", {
-    userId,
-  });
+  await writeAuditLog(
+    "EMAIL_VERIFICATION_REQUESTED",
+    {
+      userId,
+    }
+  );
 
   return {
     token,
@@ -45,13 +75,18 @@ export async function verifyEmail(token: string) {
 
   const tokenHash = hashSecureToken(token);
 
-  const record = await prisma.emailVerificationToken.findUnique({
-    where: {
-      tokenHash,
-    },
-  });
+  const record =
+    await prisma.emailVerificationToken.findUnique({
+      where: {
+        tokenHash,
+      },
+    });
 
-  if (!record || record.usedAt || record.expiresAt <= new Date()) {
+  if (
+    !record ||
+    record.usedAt ||
+    record.expiresAt <= new Date()
+  ) {
     return null;
   }
 
@@ -80,9 +115,12 @@ export async function verifyEmail(token: string) {
     },
   });
 
-  await writeAuditLog("EMAIL_VERIFIED", {
-    userId: user.id,
-  });
+  await writeAuditLog(
+    "EMAIL_VERIFIED",
+    {
+      userId: user.id,
+    }
+  );
 
   return user;
 }

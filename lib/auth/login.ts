@@ -5,6 +5,10 @@ import { authenticateUser } from "@/lib/auth/authenticate";
 import { createSession } from "@/lib/auth/session";
 import { setSessionCookie } from "@/lib/auth/session-cookie";
 import { writeAuditLog } from "@/lib/auth/audit";
+import { checkRateLimit } from "@/lib/security/rate-limit";
+
+const LOGIN_LIMIT = 5;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 
 export async function login(
   identifier: string,
@@ -15,6 +19,37 @@ export async function login(
   }
 ) {
   const normalizedIdentifier = identifier.trim().toLowerCase();
+
+  const rateLimit = await checkRateLimit(
+    `login:${normalizedIdentifier}`,
+    LOGIN_LIMIT,
+    LOGIN_WINDOW_MS
+  );
+
+  if (!rateLimit.allowed) {
+    const existingUser = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { email: normalizedIdentifier },
+          { username: normalizedIdentifier },
+        ],
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    await writeAuditLog("LOGIN_FAILED", {
+      userId: existingUser?.id,
+      ipAddress: options?.ipAddress,
+      userAgent: options?.userAgent,
+      metadata: {
+        reason: "RATE_LIMITED",
+      },
+    });
+
+    return null;
+  }
 
   const user = await authenticateUser(
     normalizedIdentifier,
@@ -43,7 +78,10 @@ export async function login(
     return null;
   }
 
-  const { token } = await createSession(user.id, options);
+  const { token } = await createSession(
+    user.id,
+    options
+  );
 
   await setSessionCookie(token);
 
