@@ -6,6 +6,7 @@ import {
   hashSecureToken,
   getEmailVerificationExpiry,
 } from "@/lib/auth/tokens";
+import { writeAuditLog } from "@/lib/auth/audit";
 
 export async function createEmailVerificationToken(userId: string) {
   const token = generateSecureToken();
@@ -25,6 +26,10 @@ export async function createEmailVerificationToken(userId: string) {
       tokenHash,
       expiresAt,
     },
+  });
+
+  await writeAuditLog("EMAIL_VERIFICATION_REQUESTED", {
+    userId,
   });
 
   return {
@@ -73,6 +78,10 @@ export async function verifyEmail(token: string) {
     data: {
       usedAt: new Date(),
     },
+  });
+
+  await writeAuditLog("EMAIL_VERIFIED", {
+    userId: user.id,
   });
 
   return user;

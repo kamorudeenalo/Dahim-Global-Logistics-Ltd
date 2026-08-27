@@ -1,8 +1,9 @@
 ﻿import "server-only";
 
 import { prisma } from "@/lib/db";
-import { hashPassword } from "@/lib/auth/password";
 import { createEmailVerificationToken } from "@/lib/auth/email-verification";
+import { writeAuditLog } from "@/lib/auth/audit";
+import { hashPassword } from "@/lib/auth/password";
 
 export async function registerUser(
   email: string,
@@ -23,9 +24,7 @@ export async function registerUser(
         { username: normalizedUsername },
       ],
     },
-    select: {
-      id: true,
-    },
+    select: { id: true },
   });
 
   if (existingUser) {
@@ -57,6 +56,13 @@ export async function registerUser(
     data: {
       userId: user.id,
       status: "PENDING",
+    },
+  });
+
+  await writeAuditLog("ACCOUNT_CREATED", {
+    userId: user.id,
+    metadata: {
+      username: user.username,
     },
   });
 

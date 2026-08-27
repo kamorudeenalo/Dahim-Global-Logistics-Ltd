@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/db";
 import { requirePermission } from "@/lib/auth/authorization";
+import { writeAuditLog } from "@/lib/auth/audit";
 
 export async function approveAccount(
   userId: string,
@@ -10,11 +11,11 @@ export async function approveAccount(
   await requirePermission(approvedById, "account.approve");
 
   const user = await prisma.user.findUnique({
-    where: {
-      id: userId,
-    },
+    where: { id: userId },
     select: {
       id: true,
+      email: true,
+      username: true,
       status: true,
       emailVerifiedAt: true,
     },
@@ -39,9 +40,7 @@ export async function approveAccount(
   }
 
   const updatedApproval = await prisma.accountApproval.update({
-    where: {
-      id: approval.id,
-    },
+    where: { id: approval.id },
     data: {
       status: "APPROVED",
       approvedById,
@@ -50,9 +49,7 @@ export async function approveAccount(
   });
 
   const updatedUser = await prisma.user.update({
-    where: {
-      id: userId,
-    },
+    where: { id: userId },
     data: {
       status: user.emailVerifiedAt ? "ACTIVE" : "PENDING",
     },
@@ -62,6 +59,13 @@ export async function approveAccount(
       username: true,
       status: true,
       emailVerifiedAt: true,
+    },
+  });
+
+  await writeAuditLog("ACCOUNT_APPROVED", {
+    userId,
+    metadata: {
+      approvedById,
     },
   });
 
@@ -79,11 +83,11 @@ export async function rejectAccount(
   await requirePermission(approvedById, "account.reject");
 
   const user = await prisma.user.findUnique({
-    where: {
-      id: userId,
-    },
+    where: { id: userId },
     select: {
       id: true,
+      email: true,
+      username: true,
       status: true,
     },
   });
@@ -107,9 +111,7 @@ export async function rejectAccount(
   }
 
   const updatedApproval = await prisma.accountApproval.update({
-    where: {
-      id: approval.id,
-    },
+    where: { id: approval.id },
     data: {
       status: "REJECTED",
       approvedById,
@@ -119,9 +121,7 @@ export async function rejectAccount(
   });
 
   const updatedUser = await prisma.user.update({
-    where: {
-      id: userId,
-    },
+    where: { id: userId },
     data: {
       status: "REJECTED",
     },
@@ -131,6 +131,14 @@ export async function rejectAccount(
       username: true,
       status: true,
       emailVerifiedAt: true,
+    },
+  });
+
+  await writeAuditLog("ACCOUNT_REJECTED", {
+    userId,
+    metadata: {
+      rejectedById: approvedById,
+      reason: reason ?? "No reason provided",
     },
   });
 
