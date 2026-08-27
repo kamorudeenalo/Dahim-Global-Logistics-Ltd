@@ -8,6 +8,8 @@ import {
 
 const SESSION_DURATION_MS = 1000 * 60 * 60 * 24 * 7;
 
+const AUTHENTICATED_USER_STATUSES = new Set(["ACTIVE"]);
+
 export async function createSession(
   userId: string,
   options?: {
@@ -70,6 +72,19 @@ export async function getSessionByToken(token: string) {
     return null;
   }
 
+  if (!AUTHENTICATED_USER_STATUSES.has(session.user.status)) {
+    await prisma.session.update({
+      where: {
+        id: session.id,
+      },
+      data: {
+        revokedAt: new Date(),
+      },
+    });
+
+    return null;
+  }
+
   await prisma.session.update({
     where: {
       id: session.id,
@@ -110,4 +125,39 @@ export async function revokeAllUserSessions(userId: string) {
       revokedAt: new Date(),
     },
   });
+}
+
+export async function changeAccountStatus(
+  userId: string,
+  status:
+    | "PENDING"
+    | "ACTIVE"
+    | "SUSPENDED"
+    | "DISABLED"
+    | "REJECTED"
+) {
+  const user = await prisma.user.update({
+    where: {
+      id: userId,
+    },
+    data: {
+      status,
+    },
+    select: {
+      id: true,
+      email: true,
+      username: true,
+      status: true,
+      emailVerifiedAt: true,
+      lastLoginAt: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  });
+
+  if (status !== "ACTIVE") {
+    await revokeAllUserSessions(userId);
+  }
+
+  return user;
 }
