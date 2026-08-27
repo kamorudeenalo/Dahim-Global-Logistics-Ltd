@@ -41,22 +41,22 @@ enum AuditAction {
 }
 
 model User {
-  id              String   @id @default(cuid())
-  email           String   @unique
-  username        String   @unique
+  id              String     @id @default(cuid())
+  email           String     @unique
+  username        String     @unique
   passwordHash    String
   status          UserStatus @default(PENDING)
   emailVerifiedAt DateTime?
   lastLoginAt     DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
 
   roles          UserRole[]
   sessions       Session[]
   emailTokens    EmailVerificationToken[]
   passwordResets PasswordResetToken[]
-  approvals      AccountApproval[] @relation("ApprovalTarget")
-  approvalsMade  AccountApproval[] @relation("ApprovalActor")
+  approvals      AccountApproval[]        @relation("ApprovalTarget")
+  approvalsMade  AccountApproval[]        @relation("ApprovalActor")
   auditLogs      AuditLog[]
 
   @@index([status])
@@ -80,7 +80,7 @@ model Permission {
   description String?
   createdAt   DateTime @default(now())
 
-  roles       RolePermission[]
+  roles RolePermission[]
 }
 
 model UserRole {
@@ -108,11 +108,11 @@ model RolePermission {
 }
 
 model Session {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   userId     String
-  tokenHash  String   @unique
+  tokenHash  String    @unique
   expiresAt  DateTime
-  createdAt  DateTime @default(now())
+  createdAt  DateTime  @default(now())
   lastUsedAt DateTime?
   revokedAt  DateTime?
   ipAddress  String?
@@ -126,12 +126,12 @@ model Session {
 }
 
 model EmailVerificationToken {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   userId    String
-  tokenHash String   @unique
+  tokenHash String    @unique
   expiresAt DateTime
   usedAt    DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -140,12 +140,12 @@ model EmailVerificationToken {
 }
 
 model PasswordResetToken {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   userId    String
-  tokenHash String   @unique
+  tokenHash String    @unique
   expiresAt DateTime
   usedAt    DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -185,4 +185,16 @@ model AuditLog {
   @@index([userId])
   @@index([action])
   @@index([createdAt])
+}
+
+model RateLimit {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  count       Int      @default(0)
+  windowStart DateTime
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([expiresAt])
 }
