@@ -12,25 +12,20 @@ import { checkRateLimit } from "@/lib/security/rate-limit";
 const EMAIL_VERIFICATION_LIMIT = 3;
 const EMAIL_VERIFICATION_WINDOW_MS = 15 * 60 * 1000;
 
-export async function createEmailVerificationToken(
-  userId: string
-) {
+export async function createEmailVerificationToken(userId: string) {
   const rateLimit = await checkRateLimit(
     `email-verification:${userId}`,
     EMAIL_VERIFICATION_LIMIT,
-    EMAIL_VERIFICATION_WINDOW_MS
+    EMAIL_VERIFICATION_WINDOW_MS,
   );
 
   if (!rateLimit.allowed) {
-    await writeAuditLog(
-      "EMAIL_VERIFICATION_REQUESTED",
-      {
-        userId,
-        metadata: {
-          reason: "RATE_LIMITED",
-        },
-      }
-    );
+    await writeAuditLog("EMAIL_VERIFICATION_REQUESTED", {
+      userId,
+      metadata: {
+        reason: "RATE_LIMITED",
+      },
+    });
 
     return null;
   }
@@ -46,21 +41,17 @@ export async function createEmailVerificationToken(
     },
   });
 
-  const record =
-    await prisma.emailVerificationToken.create({
-      data: {
-        userId,
-        tokenHash,
-        expiresAt,
-      },
-    });
-
-  await writeAuditLog(
-    "EMAIL_VERIFICATION_REQUESTED",
-    {
+  const record = await prisma.emailVerificationToken.create({
+    data: {
       userId,
-    }
-  );
+      tokenHash,
+      expiresAt,
+    },
+  });
+
+  await writeAuditLog("EMAIL_VERIFICATION_REQUESTED", {
+    userId,
+  });
 
   return {
     token,
@@ -75,20 +66,25 @@ export async function verifyEmail(token: string) {
 
   const tokenHash = hashSecureToken(token);
 
-  const record =
-    await prisma.emailVerificationToken.findUnique({
-      where: {
-        tokenHash,
-      },
-    });
+  const record = await prisma.emailVerificationToken.findUnique({
+    where: {
+      tokenHash,
+    },
+  });
 
-  if (
-    !record ||
-    record.usedAt ||
-    record.expiresAt <= new Date()
-  ) {
+  if (!record || record.usedAt || record.expiresAt <= new Date()) {
     return null;
   }
+
+  const approval = await prisma.accountApproval.findFirst({
+    where: {
+      userId: record.userId,
+      status: "APPROVED",
+    },
+    orderBy: {
+      reviewedAt: "desc",
+    },
+  });
 
   const user = await prisma.user.update({
     where: {
@@ -96,6 +92,7 @@ export async function verifyEmail(token: string) {
     },
     data: {
       emailVerifiedAt: new Date(),
+      status: approval ? "ACTIVE" : "PENDING",
     },
     select: {
       id: true,
@@ -115,12 +112,9 @@ export async function verifyEmail(token: string) {
     },
   });
 
-  await writeAuditLog(
-    "EMAIL_VERIFIED",
-    {
-      userId: user.id,
-    }
-  );
+  await writeAuditLog("EMAIL_VERIFIED", {
+    userId: user.id,
+  });
 
   return user;
 }
